@@ -1,106 +1,116 @@
 from pyrogram import Client, filters
-from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton, Message
+from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+import json
+import os
 
 API_ID = 25893261
 API_HASH = "17034419f230472d0d1767da2f9cdd62"
 BOT_TOKEN = "8084124965:AAGWr03hVIejWDThbqe9oeTof8hKK93qMIc"
-ADMIN_ID = 6111910941
+OWNER_ID = 6111910941
 
-app = Client("epic_store_bot", api_id=API_ID, api_hash=API_HASH, bot_token=BOT_TOKEN)
+app = Client("store_bot", api_id=API_ID, api_hash=API_HASH, bot_token=BOT_TOKEN)
 
-# Product database (in-memory)
-products = {
-    "Premium PFP": [],
-    "Premium Text": [],
-    "Premium CC": [],
-    "Premium Watermark": [],
-    "Topaz Setting": [],
-    "AM Topaz CC": [],
-    "Banner": [],
-    "Free Material": []
-}
+DATA_FILE = "data.json"
 
-# /start with join check
+def load_data():
+    if not os.path.exists(DATA_FILE):
+        with open(DATA_FILE, "w") as f:
+            json.dump({}, f)
+    with open(DATA_FILE, "r") as f:
+        return json.load(f)
+
+def save_data(data):
+    with open(DATA_FILE, "w") as f:
+        json.dump(data, f, indent=2)
+
 @app.on_message(filters.command("start"))
-async def start(client, message: Message):
-    keyboard = InlineKeyboardMarkup([
-        [InlineKeyboardButton("📢 Join @reversereon", url="https://t.me/reversereon")],
-        [InlineKeyboardButton("📢 Join @epic001re", url="https://t.me/epic001re")],
-        [InlineKeyboardButton("✅ I've Joined", callback_data="menu")]
-    ])
-    await message.reply("👋 Welcome to *Epic Store!*\n\nPlease join both channels to continue:", reply_markup=keyboard)
+async def start(client, message):
+    if message.chat.type != "private":
+        return
 
-# Main menu after join
-@app.on_callback_query(filters.regex("menu"))
-async def menu_callback(client, callback):
-    keyboard = InlineKeyboardMarkup([
-        [InlineKeyboardButton("💎 Premium PFP", callback_data="view:Premium PFP")],
-        [InlineKeyboardButton("📝 Premium Text", callback_data="view:Premium Text")],
-        [InlineKeyboardButton("💳 Premium CC", callback_data="view:Premium CC")],
-        [InlineKeyboardButton("🔐 Premium Watermark", callback_data="view:Premium Watermark")],
-        [InlineKeyboardButton("🎚 Topaz Setting", callback_data="view:Topaz Setting")],
-        [InlineKeyboardButton("🌟 AM Topaz CC", callback_data="view:AM Topaz CC")],
-        [InlineKeyboardButton("🖼 Banner", callback_data="view:Banner")],
-        [InlineKeyboardButton("📦 Free Material", callback_data="view:Free Material")],
+    buttons = [
+        [InlineKeyboardButton("Join @reversereon", url="https://t.me/reversereon")],
+        [InlineKeyboardButton("Join @epic001re", url="https://t.me/epic001re")],
+        [
+            InlineKeyboardButton("Premium PFP", callback_data="view_premium_pfp"),
+            InlineKeyboardButton("Premium Text", callback_data="view_premium_text")
+        ],
+        [
+            InlineKeyboardButton("Premium CC", callback_data="view_premium_cc"),
+            InlineKeyboardButton("Premium Watermark", callback_data="view_premium_watermark")
+        ],
+        [
+            InlineKeyboardButton("Topaz Setting", callback_data="view_topaz_setting"),
+            InlineKeyboardButton("AM Topaz CC", callback_data="view_am_topaz_cc")
+        ],
+        [
+            InlineKeyboardButton("Banner", callback_data="view_banner"),
+            InlineKeyboardButton("Free Material", callback_data="view_free_material")
+        ],
         [
             InlineKeyboardButton("👑 Owner", url="https://t.me/reonfx7"),
-            InlineKeyboardButton("👮 Admin", url="https://t.me/EpicAmz")
+            InlineKeyboardButton("Admin", url="https://t.me/EpicAmz")
         ]
-    ])
-    await callback.message.edit("📦 *Main Menu*\nChoose a category:", reply_markup=keyboard)
+    ]
+    await message.reply(
+        "👋 Welcome to Epic Store!\n\nSelect a category below to explore products.",
+        reply_markup=InlineKeyboardMarkup(buttons)
+    )
 
-# /add command - Admin only
-@app.on_message(filters.command("add") & filters.photo)
-async def add_product(client, message: Message):
-    if message.from_user.id != ADMIN_ID:
-        await message.reply("⛔ Only admin can use this command.")
-        return
+@app.on_message(filters.command("add") & filters.private)
+async def add_item(client, message):
+    if message.from_user.id != OWNER_ID:
+        return await message.reply("❌ Only the owner can use this command.")
+
+    if not message.reply_to_message or not message.reply_to_message.photo:
+        return await message.reply("❗Reply to a photo with this command.")
 
     try:
-        if not message.caption:
-            raise Exception("No caption")
+        parts = message.text.split(" ", 1)[1]
+        category, title, price = [p.strip() for p in parts.split("|")]
+        category_key = category.lower().replace(" ", "_")
+    except:
+        return await message.reply("❌ Format: `/add category | title | price` (reply to photo)")
 
-        # Example caption: "Premium PFP | 30 | Neon glow PFP"
-        parts = message.caption.split("|")
-        if len(parts) != 3:
-            raise Exception("Invalid format")
+    file_id = message.reply_to_message.photo.file_id
+    data = load_data()
 
-        category = parts[0].strip()
-        price = parts[1].strip()
-        title = parts[2].strip()
+    if category_key not in data:
+        data[category_key] = []
 
-        if category not in products:
-            await message.reply("❌ Invalid category name!")
-            return
+    data[category_key].append({
+        "file_id": file_id,
+        "title": title,
+        "price": price
+    })
 
-        file_id = message.photo.file_id
-        products[category].append({
-            "title": title,
-            "price": price,
-            "file_id": file_id
-        })
+    save_data(data)
+    await message.reply(f"✅ Added to `{category}`!")
 
-        await message.reply(f"✅ *Product Added!*\nCategory: {category}\nTitle: {title}\nPrice: ₹{price}", parse_mode="Markdown")
-
-    except Exception as e:
-        await message.reply("⚠️ Use this format:\nSend image with caption:\n`Premium PFP | 30 | Anime Glow PFP`", parse_mode="Markdown")
-
-# View by category
-@app.on_callback_query(filters.regex("view:"))
-async def view_category(client, callback):
-    category = callback.data.split(":")[1]
-    items = products.get(category, [])
+@app.on_callback_query()
+async def view_category(client, callback_query):
+    data = load_data()
+    category_key = callback_query.data.replace("view_", "")
+    items = data.get(category_key, [])
 
     if not items:
-        await callback.answer("🚫 No items in this category!", show_alert=True)
-        return
+        return await callback_query.message.edit("❌ No items added yet.")
 
-    for item in items:
-        await callback.message.reply_photo(
-            photo=item['file_id'],
-            caption=f"📌 *{item['title']}*\n💸 Price: ₹{item['price']}",
-            parse_mode="Markdown"
-        )
+    media = items[-1]
+    caption = f"**{media['title']}**\n💸 Price: {media['price']}"
+    buttons = [
+        [InlineKeyboardButton("🔙 Back", callback_data="back"),
+         InlineKeyboardButton("🏠 Main Menu", callback_data="main_menu")]
+    ]
+    await callback_query.message.edit_photo(
+        photo=media["file_id"],
+        caption=caption,
+        reply_markup=InlineKeyboardMarkup(buttons)
+    )
+
+@app.on_callback_query(filters.regex("back|main_menu"))
+async def back_home(client, callback_query):
+    await start(client, callback_query.message)
 
 app.run()
-                              
+        
