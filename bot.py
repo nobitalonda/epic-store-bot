@@ -6,111 +6,89 @@ import os
 API_ID = 25893261
 API_HASH = "17034419f230472d0d1767da2f9cdd62"
 BOT_TOKEN = "8084124965:AAGWr03hVIejWDThbqe9oeTof8hKK93qMIc"
-OWNER_ID = 6111910941
+OWNER_ID = 6111910941  # @reonfx7
 
-app = Client("store_bot", api_id=API_ID, api_hash=API_HASH, bot_token=BOT_TOKEN)
+bot = Client("store_bot", api_id=API_ID, api_hash=API_HASH, bot_token=BOT_TOKEN)
 
 DATA_FILE = "data.json"
+if not os.path.exists(DATA_FILE):
+    with open(DATA_FILE, "w") as f:
+        json.dump({}, f)
 
-def load_data():
-    if not os.path.exists(DATA_FILE):
-        with open(DATA_FILE, "w") as f:
-            json.dump({}, f)
+def save_product(category, title, price, file_id, file_type):
     with open(DATA_FILE, "r") as f:
-        return json.load(f)
+        data = json.load(f)
 
-def save_data(data):
+    if category not in data:
+        data[category] = []
+
+    data[category].append({
+        "title": title,
+        "price": price,
+        "file_id": file_id,
+        "type": file_type
+    })
+
     with open(DATA_FILE, "w") as f:
         json.dump(data, f, indent=2)
 
-@app.on_message(filters.command("start"))
-async def start(client, message):
-    if message.chat.type != "private":
-        return
-
-    buttons = [
-        [InlineKeyboardButton("Join @reversereon", url="https://t.me/reversereon")],
-        [InlineKeyboardButton("Join @epic001re", url="https://t.me/epic001re")],
-        [
-            InlineKeyboardButton("Premium PFP", callback_data="view_premium_pfp"),
-            InlineKeyboardButton("Premium Text", callback_data="view_premium_text")
-        ],
-        [
-            InlineKeyboardButton("Premium CC", callback_data="view_premium_cc"),
-            InlineKeyboardButton("Premium Watermark", callback_data="view_premium_watermark")
-        ],
-        [
-            InlineKeyboardButton("Topaz Setting", callback_data="view_topaz_setting"),
-            InlineKeyboardButton("AM Topaz CC", callback_data="view_am_topaz_cc")
-        ],
-        [
-            InlineKeyboardButton("Banner", callback_data="view_banner"),
-            InlineKeyboardButton("Free Material", callback_data="view_free_material")
-        ],
-        [
-            InlineKeyboardButton("👑 Owner", url="https://t.me/reonfx7"),
-            InlineKeyboardButton("Admin", url="https://t.me/EpicAmz")
-        ]
-    ]
-    await message.reply(
-        "👋 Welcome to Epic Store!\n\nSelect a category below to explore products.",
-        reply_markup=InlineKeyboardMarkup(buttons)
-    )
-
-@app.on_message(filters.command("add") & filters.private)
-async def add_item(client, message):
+@bot.on_message(filters.command("add") & filters.reply)
+def add_handler(client, message):
     if message.from_user.id != OWNER_ID:
-        return await message.reply("❌ Only the owner can use this command.")
-
-    if not message.reply_to_message or not message.reply_to_message.photo:
-        return await message.reply("❗Reply to a photo with this command.")
+        return message.reply("❌ Only the Owner can add products!")
 
     try:
-        parts = message.text.split(" ", 1)[1]
-        category, title, price = [p.strip() for p in parts.split("|")]
-        category_key = category.lower().replace(" ", "_")
-    except:
-        return await message.reply("❌ Format: `/add category | title | price` (reply to photo)")
+        parts = message.text.split(" ", 1)[1].split("|")
+        category = parts[0].strip().lower()
+        title = parts[1].strip()
+        price = parts[2].strip()
 
-    file_id = message.reply_to_message.photo.file_id
-    data = load_data()
+        reply = message.reply_to_message
+        if reply.photo:
+            file_id = reply.photo.file_id
+            file_type = "photo"
+        elif reply.document:
+            file_id = reply.document.file_id
+            file_type = "document"
+        else:
+            return message.reply("❌ Please reply to an image or file.")
 
-    if category_key not in data:
-        data[category_key] = []
+        save_product(category, title, price, file_id, file_type)
+        message.reply(f"✅ Product added in '{category}'!\n\n**{title}** - {price}")
 
-    data[category_key].append({
-        "file_id": file_id,
-        "title": title,
-        "price": price
-    })
+    except Exception as e:
+        message.reply(f"❌ Error: Format galat hai.\nUse: `/add category | title | price`", quote=True)
 
-    save_data(data)
-    await message.reply(f"✅ Added to `{category}`!")
+@bot.on_message(filters.command("view"))
+def view_category(client, message):
+    with open(DATA_FILE, "r") as f:
+        data = json.load(f)
 
-@app.on_callback_query()
-async def view_category(client, callback_query):
-    data = load_data()
-    category_key = callback_query.data.replace("view_", "")
-    items = data.get(category_key, [])
+    keyboard = []
+    for cat in data.keys():
+        keyboard.append([InlineKeyboardButton(cat.title(), callback_data=f"view_{cat}")])
 
-    if not items:
-        return await callback_query.message.edit("❌ No items added yet.")
+    message.reply("📁 Select a category:", reply_markup=InlineKeyboardMarkup(keyboard))
 
-    media = items[-1]
-    caption = f"**{media['title']}**\n💸 Price: {media['price']}"
-    buttons = [
-        [InlineKeyboardButton("🔙 Back", callback_data="back"),
-         InlineKeyboardButton("🏠 Main Menu", callback_data="main_menu")]
-    ]
-    await callback_query.message.edit_photo(
-        photo=media["file_id"],
-        caption=caption,
-        reply_markup=InlineKeyboardMarkup(buttons)
-    )
+@bot.on_callback_query()
+def handle_callback(client, callback_query):
+    data = callback_query.data
+    if data.startswith("view_"):
+        category = data.replace("view_", "")
+        with open(DATA_FILE, "r") as f:
+            db = json.load(f)
 
-@app.on_callback_query(filters.regex("back|main_menu"))
-async def back_home(client, callback_query):
-    await start(client, callback_query.message)
+        if category not in db:
+            return callback_query.message.edit("❌ Category not found.")
 
-app.run()
-        
+        for item in db[category]:
+            caption = f"**{item['title']}**\n💰 Price: {item['price']}"
+            if item["type"] == "photo":
+                client.send_photo(callback_query.message.chat.id, item["file_id"], caption=caption)
+            elif item["type"] == "document":
+                client.send_document(callback_query.message.chat.id, item["file_id"], caption=caption)
+
+        callback_query.answer()
+
+bot.run()
+              
