@@ -8,7 +8,19 @@ ADMIN_ID = 6111910941
 
 app = Client("epic_store_bot", api_id=API_ID, api_hash=API_HASH, bot_token=BOT_TOKEN)
 
-# Start + Join check
+# In-memory product store
+products = {
+    "Premium PFP": [],
+    "Premium Text": [],
+    "Premium CC": [],
+    "Premium Watermark": [],
+    "Topaz Setting": [],
+    "AM Topaz CC": [],
+    "Banner": [],
+    "Free Material": []
+}
+
+# Start + channel join check
 @app.on_message(filters.command("start"))
 async def start(client, message: Message):
     keyboard = InlineKeyboardMarkup([
@@ -18,18 +30,18 @@ async def start(client, message: Message):
     ])
     await message.reply("👋 Welcome to Epic Store!\n\nPlease join both channels to continue:", reply_markup=keyboard)
 
-# Show main menu
+# Main Menu
 @app.on_callback_query(filters.regex("menu"))
 async def menu_callback(client, callback):
     keyboard = InlineKeyboardMarkup([
-        [InlineKeyboardButton("💎 Premium PFP", callback_data="premium_pfp")],
-        [InlineKeyboardButton("📝 Premium Text", callback_data="premium_text")],
-        [InlineKeyboardButton("💳 Premium CC", callback_data="premium_cc")],
-        [InlineKeyboardButton("🔐 Premium Watermark", callback_data="premium_watermark")],
-        [InlineKeyboardButton("🎚 Topaz Setting", callback_data="topaz")],
-        [InlineKeyboardButton("🌟 AM Topaz CC", callback_data="amtopaz")],
-        [InlineKeyboardButton("🖼 Banner", callback_data="banner")],
-        [InlineKeyboardButton("📦 Free Material", callback_data="free")],
+        [InlineKeyboardButton("💎 Premium PFP", callback_data="view:Premium PFP")],
+        [InlineKeyboardButton("📝 Premium Text", callback_data="view:Premium Text")],
+        [InlineKeyboardButton("💳 Premium CC", callback_data="view:Premium CC")],
+        [InlineKeyboardButton("🔐 Premium Watermark", callback_data="view:Premium Watermark")],
+        [InlineKeyboardButton("🎚 Topaz Setting", callback_data="view:Topaz Setting")],
+        [InlineKeyboardButton("🌟 AM Topaz CC", callback_data="view:AM Topaz CC")],
+        [InlineKeyboardButton("🖼 Banner", callback_data="view:Banner")],
+        [InlineKeyboardButton("📦 Free Material", callback_data="view:Free Material")],
         [
             InlineKeyboardButton("👑 Owner", url="https://t.me/reonfx"),
             InlineKeyboardButton("👮 Admin", url="https://t.me/EpicAmz")
@@ -37,44 +49,59 @@ async def menu_callback(client, callback):
     ])
     await callback.message.edit("📦 *Main Menu*\nChoose a category:", reply_markup=keyboard)
 
-# Premium PFP
-@app.on_callback_query(filters.regex("premium_pfp"))
-async def premium_pfp(client, callback):
-    await callback.message.reply_photo(
-        photo="https://telegra.ph/file/2b03ed21e60e3a227c013.jpg",  # replace with your image URL
-        caption="💎 Premium PFP\n\n💰 Price: 30 stars",
-        reply_markup=InlineKeyboardMarkup([
-            [InlineKeyboardButton("🔙 Back", callback_data="menu")]
-        ])
-    )
+# Admin-only /add command
+@app.on_message(filters.command("add") & filters.photo)
+async def add_product(client, message: Message):
+    if message.from_user.id != ADMIN_ID:
+        await message.reply("⛔ Only admin can add products.")
+        return
 
-# Premium Text
-@app.on_callback_query(filters.regex("premium_text"))
-async def premium_text(client, callback):
+    try:
+        parts = message.caption.split(" ", 2)
+        category = parts[0].strip('"')
+        price = parts[1]
+        title = parts[2]
+
+        if category not in products:
+            await message.reply("❌ Invalid category.")
+            return
+
+        image_id = message.photo.file_id
+
+        products[category].append({
+            "title": title,
+            "price": price,
+            "file_id": image_id
+        })
+
+        await message.reply(f"✅ Added to *{category}*\n• {title}\n• ₹{price}", parse_mode="Markdown")
+
+    except Exception as e:
+        await message.reply("⚠️ Format: `/add \"Category\" price title`\n(Send with image and caption)", quote=True)
+
+# Category view (for public)
+@app.on_callback_query(filters.regex("view:"))
+async def view_category(client, callback):
+    category = callback.data.split(":")[1]
+    items = products.get(category, [])
+    if not items:
+        await callback.answer("🚫 No items yet!", show_alert=True)
+        return
+
+    for item in items:
+        await callback.message.reply_photo(
+            photo=item['file_id'],
+            caption=f"📌 *{item['title']}*\n💸 Price: ₹{item['price']}",
+            parse_mode="Markdown"
+        )
+
+# Back to menu shortcut (if needed)
+@app.on_message(filters.command("menu"))
+async def menu_cmd(client, message):
     keyboard = InlineKeyboardMarkup([
-        [InlineKeyboardButton("Smooth bavel text", callback_data="smooth_bavel")],
-        [InlineKeyboardButton("Premium glow text", callback_data="glow_text")],
-        [InlineKeyboardButton("AE like text", callback_data="ae_text")],
-        [InlineKeyboardButton("🔙 Back", callback_data="menu")]
+        [InlineKeyboardButton("🔙 Main Menu", callback_data="menu")]
     ])
-    await callback.message.edit("📝 Premium Text Options:", reply_markup=keyboard)
-
-# Premium CC
-@app.on_callback_query(filters.regex("premium_cc"))
-async def premium_cc(client, callback):
-    keyboard = InlineKeyboardMarkup([
-        [InlineKeyboardButton("Gaming cc", callback_data="gaming_cc")],
-        [InlineKeyboardButton("Opium cc", callback_data="opium_cc")],
-        [InlineKeyboardButton("By mistake cc", callback_data="mistake_cc")],
-        [InlineKeyboardButton("Hammer cc", callback_data="hammer_cc")],
-        [InlineKeyboardButton("🔙 Back", callback_data="menu")]
-    ])
-    await callback.message.edit("💳 Premium CC Options:", reply_markup=keyboard)
-
-# Other placeholders
-@app.on_callback_query(filters.regex(".*"))
-async def handle_others(client, callback):
-    await callback.answer("🚧 Coming Soon or Not Configured!", show_alert=True)
+    await message.reply("⬅️ Tap to return to menu", reply_markup=keyboard)
 
 app.run()
-    
+                              
